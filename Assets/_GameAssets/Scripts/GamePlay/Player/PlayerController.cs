@@ -1,3 +1,4 @@
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -14,7 +15,12 @@ public class NewMonoBehaviourScript : MonoBehaviour
     [SerializeField] private KeyCode _jumpKey;
     [SerializeField] private float _jumpForce;
     [SerializeField] private float _jumgCooldown;
+    [SerializeField] private float _airMultiplier;
+
+    [SerializeField] private float _airDrag;
     [SerializeField] private bool _canJump;
+
+    
     
     [Header("Sliding Setting")]
     [SerializeField] private KeyCode _slideKey;
@@ -26,6 +32,8 @@ public class NewMonoBehaviourScript : MonoBehaviour
     [SerializeField] private float _playerHeight;
     [SerializeField] private LayerMask _groundLayer;
     [SerializeField] private float _groundDrag;
+
+   private StateController _stateController;
    //LayerMask Sadece zemin olarak işaretlediğim nesnelere çarpınca zıplmasına izin ver demektir.
    private Rigidbody _playerRigibody;
 
@@ -39,6 +47,7 @@ public class NewMonoBehaviourScript : MonoBehaviour
 
    private void Awake()
     {
+        _stateController = GetComponent<StateController>();
         _playerRigibody = GetComponent<Rigidbody>();
         // Benim bu scripti üzerine attığım objenin fizik motorunu bul yani Rigibody ve benim playerRigibody nin içine yerleştir.
         _playerRigibody.freezeRotation = true;
@@ -47,6 +56,7 @@ public class NewMonoBehaviourScript : MonoBehaviour
     private void Update()
     {
        SetInputs(); 
+       SetStates();
        SetPlayerDrag();
        LimitPlayerSpeed();
     }
@@ -65,12 +75,12 @@ public class NewMonoBehaviourScript : MonoBehaviour
         if (Input.GetKeyDown(_slideKey))
         {
             _isSliding = true;
-            Debug.Log("Player Sliding");
+          
         }
         else if (Input.GetKeyDown(_movementKey))
         {
             _isSliding = false;
-            Debug.Log("Player Moving");
+         
         }
 
         else if (Input.GetKey(_jumpKey) && _canJump && IsGrounded())
@@ -82,40 +92,60 @@ public class NewMonoBehaviourScript : MonoBehaviour
         // Zıplama tuşuna Space basılıyor mu Zıplama bekleme süresi cooldown doldu mu ayağın yere değiyo mu sorularını sorar karakterimize.
     }
 
+    private void SetStates()
+    {
+        var MovementDirection = GetMovementDirection();
+        var isGrounded = IsGrounded();
+        var currentState = _stateController.GetCurrentState();
+        var isSliding = IsSliding();
+        var newState = currentState switch
+        {
+            
+           _ when _movementDirection == Vector3.zero && isGrounded && !isSliding => PlayerState.Idle,
+           _ when _movementDirection != Vector3.zero && isGrounded && !isSliding => PlayerState.Move,
+           _ when _movementDirection != Vector3.zero && isGrounded && isSliding => PlayerState.Slide,
+           _ when _movementDirection == Vector3.zero && isGrounded && isSliding => PlayerState.SlideIdle,
+           _ when !_canJump && !isGrounded => PlayerState.Jump,
+           _ => currentState
+        };
+        if(newState != currentState)
+        {
+            _stateController.ChangeState(newState);
+        }
+    }
+
     private void SetPlayerMovement()
     {
         _movementDirection = _orientationTransform.forward * _verticalInput + _orientationTransform.right * _horizontalInput;
+        float forceMultiplier = _stateController.GetCurrentState() switch
+        {
+          PlayerState.Move => 1f,
+          PlayerState.Slide => _slideMultiplier,
+          PlayerState.Jump => _airMultiplier,
+          _ => 1f  
+        };
         // MovemenDirection civcivin nereye gideceğini hesaplıyor
         //_OrientationTransform.forward * _verticalInput:"Karakterin baktığı yönün ilerisi ile ileri tuşunu çarp. 
         // _orientationTransform.right * _horizontalInput:"Karakterin sağı ile sağ tuşunu çarp".
         // Ve en sonda ikisini çarpıp en son toplama yapıyo bu sayede civcivin gidiceği rotayı buluyoruz.
-
-        if (_isSliding)
-        {
-             _playerRigibody.AddForce(_movementDirection.normalized * _movementSpeed * _slideMultiplier, ForceMode.Force);
-        }
-        else
-        {
-            _playerRigibody.AddForce(_movementDirection.normalized * _movementSpeed , ForceMode.Force);
-        }
+        
 
        
         // .normalized:Eğer hem sağa hem ileri basarsan karakter normalden daha hızlı gider pisagor teorisinden dolayı.Bu komut hızı hep sabitte tutar,hile yapmayı engeller.
         //_playerRigibody.AddForce:İşte civcivi iten o görünmez el! 
         //Hesapladığın yönü,belirlediğin hızla çarpıp fizik motoruna"Bunu bu yöne doğru it!" diyorsun.
         //ForceMode.Force:Bu,itme işleminin sürekli bir kuvvet araba motoru gibi olduğunu söyler.
+         _playerRigibody.AddForce(_movementDirection.normalized * _movementSpeed * forceMultiplier, ForceMode.Force);
     }
     private void SetPlayerDrag()
-    {
-        if (_isSliding)
-        {
-            _playerRigibody.linearDamping = _slideDrag;
-        }
-        else
-        {
-            _playerRigibody.linearDamping = _groundDrag;
-        }
-        
+   {
+     _playerRigibody.linearDamping = _stateController.GetCurrentState() switch
+     {
+         PlayerState.Move => _groundDrag,
+         PlayerState.Slide => _slideDrag,
+         PlayerState.Jump => _airDrag,
+         _ => _playerRigibody.linearDamping
+     };   
     }
     private void LimitPlayerSpeed()
     {
@@ -147,5 +177,14 @@ public class NewMonoBehaviourScript : MonoBehaviour
         return Physics.Raycast(transform.position, Vector3.down, _playerHeight * 0.5f + 0.2f, _groundLayer);
         //Physic.Raycast:Civcivin merkezinden yere doğru hayali bir lazer ışını yollar
         //_playerHeight * 0.5f + 0.2f:Lazerin uzunluğunu hesaplıyo.Boyunun yarısından birazcık daha uzun bir lazer yolluyor ki tam yere değdiğinde "Evet,yerdeyim!" diyebilsin.
+    }
+    
+    private Vector3 GetMovementDirection()
+    {
+        return _movementDirection.normalized;
+    }
+    private bool IsSliding()
+    {
+        return _isSliding;
     }
 }
