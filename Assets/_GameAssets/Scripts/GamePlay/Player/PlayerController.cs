@@ -1,13 +1,19 @@
 using Unity.VisualScripting;
 using UnityEngine;
+using System;
 using UnityEngine.InputSystem;
 
-public class NewMonoBehaviourScript : MonoBehaviour
+public class PlayerController : MonoBehaviour
 {
+    public event Action OnPlayerJumped;
+
     [Header("References")]
+
     [SerializeField] private Transform _orientationTransform;
+
      [Header("Movement Settings")]
      [SerializeField] private KeyCode _movementKey;
+
     [SerializeField] private float _movementSpeed;
 
 
@@ -161,6 +167,8 @@ public class NewMonoBehaviourScript : MonoBehaviour
 
     private void SetPlayerJumping()
     {
+        OnPlayerJumped?.Invoke();
+         
         _playerRigibody.linearVelocity = new Vector3(_playerRigibody.linearVelocity.x,0f,_playerRigibody.linearVelocity.z);
         //Bu satır aslında bir "Sıfırlama" işlemi.Civciv aşağı düşerken zıplarsa,düşüş hızı zıplama gücünü kırmasın diye dikey hızı y ekseni önce 0 yapılıyor.Böylece her zıplamada aynı yükseklikte oluyo.
         _playerRigibody.AddForce(transform.up * _jumpForce, ForceMode.Impulse);
